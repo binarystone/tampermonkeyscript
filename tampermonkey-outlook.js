@@ -241,11 +241,7 @@
         
         forcePlayAudio();
         
-        // Auto-stop after 5 minutes
-        alarmTimeout = setTimeout(() => {
-            log('⏰ Auto-stopping alarm after 5 minutes');
-            stopAlarm();
-        }, 300000);
+        // Run indefinitely until user clicks Stop (no auto-stop timer)
     }
     
     // Stop alarm
