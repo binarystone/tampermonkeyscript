@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Outlook Web Email Alarm (DEBUG)
 // @namespace    http://tampermonkey.net/
-// @version      0.4
-// @description  DEBUG VERSION - Plays alarm on new email with extensive logging
+// @version      0.5
+// @description  AUTOPLAY FIX - One-click autoplay enable, no more popups, enhanced audio context
 // @author       You
 // @match        https://outlook.office.com/*
 // @match        https://outlook.live.com/*
@@ -22,10 +22,12 @@
     ];
     
     let audio = null;
+    let audioContext = null;
     let lastUnreadCount = 0;
     let alarmTimeout = null;
     let isInitialized = false;
     let debugLog = [];
+    let autoplayEnabled = false;
     
     // Enhanced logging
     function log(message) {
@@ -93,9 +95,37 @@
         }
     }
     
+    // Initialize audio context for better autoplay support
+    function initAudioContext() {
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (AudioContext) {
+                audioContext = new AudioContext();
+                log('🎵 Audio context initialized');
+            }
+        } catch (error) {
+            log(`⚠️ Audio context initialization failed: ${error.message}`);
+        }
+    }
+    
+    // Resume audio context if suspended
+    async function resumeAudioContext() {
+        if (audioContext && audioContext.state === 'suspended') {
+            try {
+                await audioContext.resume();
+                log('🎵 Audio context resumed');
+            } catch (error) {
+                log(`⚠️ Failed to resume audio context: ${error.message}`);
+            }
+        }
+    }
+
     // Test audio with multiple URLs
     async function initAudio() {
         log('Initializing audio...');
+        
+        // Initialize audio context
+        initAudioContext();
         
         for (let i = 0; i < AUDIO_URLS.length; i++) {
             const url = AUDIO_URLS[i];
@@ -136,8 +166,8 @@
         log('❌ All audio URLs failed to load');
     }
     
-    // Force play audio with user interaction
-    function forcePlayAudio() {
+    // Force play audio with enhanced autoplay support
+    async function forcePlayAudio() {
         if (!audio) {
             log('❌ No audio object available');
             return;
@@ -145,15 +175,25 @@
         
         log('🔊 Attempting to play audio...');
         
-        const playPromise = audio.play();
+        // Resume audio context if needed
+        await resumeAudioContext();
         
-        if (playPromise !== undefined) {
-            playPromise.then(() => {
+        try {
+            const playPromise = audio.play();
+            
+            if (playPromise !== undefined) {
+                await playPromise;
                 log('✓ Audio playing successfully');
-            }).catch(error => {
-                log(`❌ Audio play failed: ${error.message}`);
+            }
+        } catch (error) {
+            log(`❌ Audio play failed: ${error.message}`);
+            
+            // If autoplay is enabled, don't show the manual button
+            if (autoplayEnabled) {
+                log('⚠️ Autoplay was enabled but still failed - this may be a browser restriction');
+            } else {
                 showPlayButton();
-            });
+            }
         }
     }
     
@@ -379,22 +419,71 @@
         document.body.appendChild(container);
     }
     
-    // Initialize everything
-    async function initialize() {
-        log('🚀 Starting Outlook Email Alarm (DEBUG VERSION)');
-        log(`📍 URL: ${window.location.href}`);
-        log(`🌐 User Agent: ${navigator.userAgent.substring(0, 100)}...`);
+    // Enable autoplay with user interaction
+    function enableAutoplay() {
+        log('🎵 Enabling autoplay with user interaction...');
         
-        // Create debug display
-        createDebugDisplay();
+        // Create a one-time click handler to enable autoplay
+        const enableButton = document.createElement('button');
+        enableButton.textContent = '🔊 Enable Email Alerts (Click Once)';
+        enableButton.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10002;
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 20px 30px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            animation: pulse 1s infinite;
+        `;
         
-        // Add control buttons
-        addControlButtons();
+        enableButton.onclick = async () => {
+            log('👆 User clicked to enable autoplay');
+            
+            // Resume audio context
+            await resumeAudioContext();
+            
+            // Test audio play to enable autoplay
+            if (audio) {
+                try {
+                    await audio.play();
+                    audio.pause();
+                    audio.currentTime = 0;
+                    autoplayEnabled = true;
+                    log('✅ Autoplay enabled successfully');
+                } catch (error) {
+                    log(`⚠️ Autoplay test failed: ${error.message}`);
+                    autoplayEnabled = false;
+                }
+            }
+            
+            enableButton.remove();
+            
+            // Start monitoring after user interaction
+            startMonitoring();
+        };
         
-        // Initialize audio
-        await initAudio();
+        document.body.appendChild(enableButton);
         
-        // Start monitoring
+        // Auto-remove after 10 seconds if not clicked
+        setTimeout(() => {
+            if (enableButton.parentNode) {
+                enableButton.remove();
+                log('⚠️ Autoplay enable button auto-removed, starting monitoring anyway');
+                startMonitoring();
+            }
+        }, 10000);
+    }
+    
+    // Start monitoring function
+    function startMonitoring() {
         log('👀 Starting email monitoring...');
         
         // Check every 3 seconds
@@ -429,7 +518,28 @@
             checkForNewEmails();
         }, 3000);
         
-        log('✅ Initialization complete - monitoring active');
+        log('✅ Monitoring started - autoplay should work now');
+    }
+
+    // Initialize everything
+    async function initialize() {
+        log('🚀 Starting Outlook Email Alarm (DEBUG VERSION)');
+        log(`📍 URL: ${window.location.href}`);
+        log(`🌐 User Agent: ${navigator.userAgent.substring(0, 100)}...`);
+        
+        // Create debug display
+        createDebugDisplay();
+        
+        // Add control buttons
+        addControlButtons();
+        
+        // Initialize audio
+        await initAudio();
+        
+        // Enable autoplay with user interaction
+        enableAutoplay();
+        
+        log('✅ Initialization complete - waiting for user interaction to enable autoplay');
     }
     
     // Start when ready
